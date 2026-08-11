@@ -1,0 +1,38 @@
+services:
+  ppe:
+    build: .
+    restart: unless-stopped
+    environment:
+      PPE_PUBLIC: "1"
+      PPE_HOST: "0.0.0.0"
+      PPE_USERNAME: "${PPE_USERNAME:?Set PPE_USERNAME in .env}"
+      PPE_PASSWORD: "${PPE_PASSWORD:?Set PPE_PASSWORD in .env}"
+      PPE_DEVICE: "${PPE_DEVICE:-cpu}"
+      PPE_IMGSZ: "${PPE_IMGSZ:-512}"
+      PPE_MAX_DATASET_UPLOAD_MB: "${PPE_MAX_DATASET_UPLOAD_MB:-2048}"
+    volumes:
+      - ppe_logs:/app/logs
+      - ppe_datasets:/app/datasets
+    expose:
+      - "4175"
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      ppe:
+        condition: service_healthy
+    environment:
+      PPE_DOMAIN: "${PPE_DOMAIN:?Set PPE_DOMAIN in .env}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  ppe_logs:
+  ppe_datasets:
+  caddy_data:
+  caddy_config:

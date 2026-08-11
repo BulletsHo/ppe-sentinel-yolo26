@@ -1,0 +1,74 @@
+{
+  "name": "ppe-sentinel-yolo26",
+  "private": false,
+  "version": "1.0.0",
+  "description": "Open-source YOLO26 PPE detection for browsers, desktops, and self-hosted deployments",
+  "type": "commonjs",
+  "main": "electron/main.cjs",
+  "license": "AGPL-3.0-or-later",
+  "author": "PPE Sentinel contributors",
+  "keywords": ["yolo26", "ppe", "computer-vision", "workplace-safety", "electron"],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs",
+    "build": "npm run privacy:audit && node --check app.js && node --check server.cjs && node --check electron/main.cjs && node scripts/run_python.cjs -m py_compile scripts/camera_inference_server.py scripts/import_dataset.py scripts/audit_release_privacy.py scripts/sanitize_checkpoint.py",
+    "preview": "node server.cjs",
+    "desktop": "electron .",
+    "build:backend": "node scripts/run_python.cjs scripts/build_desktop_backend.py",
+    "pack:desktop": "npm run privacy:audit && npm run build:backend && electron-builder --dir",
+    "dist:desktop": "npm run privacy:audit && npm run build:backend && electron-builder",
+    "dataset:import": "node scripts/run_python.cjs scripts/import_dataset.py",
+    "dataset:audit": "node scripts/run_python.cjs scripts/audit_dataset.py",
+    "evaluate": "node scripts/run_python.cjs scripts/evaluate_yolo26.py",
+    "privacy:audit": "node scripts/run_python.cjs scripts/audit_release_privacy.py",
+    "privacy:sanitize-model": "node scripts/run_python.cjs scripts/sanitize_checkpoint.py --in-place",
+    "test": "node scripts/run_python.cjs -m unittest discover -s tests -v"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "org.ppe-sentinel.yolo26",
+    "productName": "PPE Sentinel",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "app.js",
+      "index.html",
+      "server.cjs",
+      "package.json",
+      "src/**/*",
+      "electron/**/*",
+      "scripts/*.py",
+      "requirements*.txt",
+      "outputs/yolo26-train/ppe-yolo26n-incremental-final/weights/best.pt"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "artifactName": "PPE-Sentinel-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility",
+      "artifactName": "PPE-Sentinel-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.utilities",
+      "artifactName": "PPE-Sentinel-${version}-${arch}.${ext}"
+    }
+  }
+}

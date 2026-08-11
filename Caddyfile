@@ -1,0 +1,4 @@
+{$PPE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy ppe:4175
+}
