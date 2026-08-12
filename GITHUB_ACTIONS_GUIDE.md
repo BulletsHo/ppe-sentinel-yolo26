@@ -15,7 +15,7 @@
 git init -b main
 git add .
 git commit -m "Initial PPE Sentinel YOLO26 release"
-git remote add origin https://github.com/<account>/ppe-sentinel-yolo26.git
+git remote add origin https://github.com/BulletsHo/ppe-sentinel-yolo26.git
 git push -u origin main
 ```
 
@@ -124,6 +124,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag (for example, v1.0.2)"
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -133,9 +142,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Validate release version
+        run: |
+          node -e "const p=require('./package.json'); const tag=process.env.RELEASE_TAG.replace(/^v/, ''); if (p.version !== tag) { console.error('Tag ' + process.env.RELEASE_TAG + ' does not match package version ' + p.version); process.exit(1) }"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -149,12 +163,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ppe-sentinel-windows
-          path: release/*
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+          if-no-files-found: error
 
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -164,14 +183,35 @@ jobs:
       - name: Install Python and Node dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.7.1" "torchvision==0.22.1"
           python -m pip install -r requirements-build.txt
+          python -c "import torch, torchvision; assert torch.version.cuda is None, 'Linux desktop build must use CPU-only PyTorch'; print(f'torch={torch.__version__}, torchvision={torchvision.__version__}, cuda={torch.version.cuda}')"
           npm install --no-audit --no-fund
       - name: Build Linux AppImage
         run: npm run dist:desktop
+      - name: Verify Linux AppImage size
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_bytes=2147483647
+          appimage=(release/*.AppImage)
+          if [[ ! -f "${appimage[0]}" ]]; then
+            echo "No AppImage was generated" >&2
+            exit 1
+          fi
+          for file in "${appimage[@]}"; do
+            size=$(stat -c %s "$file")
+            echo "$file: $size bytes"
+            if (( size > max_bytes )); then
+              echo "AppImage exceeds the GitHub Release asset limit of 2147483647 bytes" >&2
+              exit 1
+            fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: ppe-sentinel-linux
-          path: release/*
+          path: release/*.AppImage
+          if-no-files-found: error
 
   publish:
     needs: [windows, linux]
@@ -180,19 +220,49 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release
+          merge-multiple: true
+      - name: Verify release asset sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_bytes=2147483647
+          found=0
+          while IFS= read -r -d '' file; do
+            found=1
+            size=$(stat -c %s "$file")
+            echo "$file: $size bytes"
+            if (( size > max_bytes )); then
+              echo "Release asset exceeds GitHub's 2147483647-byte limit: $file" >&2
+              exit 1
+            fi
+          done < <(find release -maxdepth 1 -type f \( -name '*.exe' -o -name '*.exe.blockmap' -o -name '*.AppImage' \) -print0)
+          if (( found == 0 )); then
+            echo "No release assets were downloaded" >&2
+            exit 1
+          fi
       - name: Publish tagged release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/**/*
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.AppImage
+          fail_on_unmatched_files: false
           generate_release_notes: true
 ```
 
 关键配置含义：
 
-- `tags: ["v*"]`：只有推送 `v` 开头的标签才发布，普通代码推送只运行 CI。
+- `tags: ["v*"]`：推送 `v` 开头的标签时自动发布，普通代码推送只运行 CI。
+- `workflow_dispatch.inputs.tag`：允许从 Actions 页面手动输入已经存在的发布标签。
+- `RELEASE_TAG`：自动发布时取 `github.ref_name`，手动发布时取输入值；构建检出与 Release 发布始终使用同一个标签。
 - `contents: write`：允许当前工作流使用临时 `GITHUB_TOKEN` 创建 Release；不需要个人访问令牌。
 - `requirements-build.txt`：安装 Ultralytics、PyInstaller 等打包后端依赖。
 - `npm install`：允许 Electron 安装脚本下载对应平台的运行时；发布构建不能使用 `--ignore-scripts`。
+- `electron-builder --publish never`：只生成平台安装包，禁止标签触发 Electron Builder 隐式上传；统一由 Publish Job 发布。
+- Linux 发布构建使用 CPU-only PyTorch，避免 CUDA/Triton 动态库使 AppImage 超过 GitHub 单资产 2 GiB 限制；源码部署仍可使用 CUDA。
+- 构建与发布前检查每个资产不超过 `2147483647` 字节，并验证标签版本与 `package.json.version` 一致。
 - `needs: [windows, linux]`：两个平台均构建成功后才执行发布，避免生成不完整 Release。
 - `upload-artifact`/`download-artifact`：先保存平台产物，再汇总给 Publish Job。
 
@@ -201,35 +271,62 @@ jobs:
 合并到 `main` 后，使用符合语义化版本的标签触发发布工作流：
 
 ```powershell
-git tag -a v1.0.0 -m "PPE Sentinel 1.0.0"
-git push origin v1.0.0
+git tag -a v1.0.2 -m "PPE Sentinel 1.0.2"
+git push origin v1.0.2
 ```
 
 `release.yml` 的执行顺序如下：
 
 ### Windows Job
 
-1. 使用 `windows-latest`。
-2. 安装 Node.js 20、Python 3.11、Ultralytics 和 PyInstaller。
-3. 执行 `npm install`，下载 Electron 和 electron-builder 所需的 Windows 资源。
-4. 执行 `npm run dist:desktop`。
-5. 先运行隐私审计，再由 `scripts/build_desktop_backend.py` 生成 `ppe-inference` 和 `ppe-dataset-importer` 两个 PyInstaller 后端。
-6. Electron Builder 生成 NSIS 安装包和 Portable 便携版，并上传 `release/*`。
+1. GitHub 为 `windows` Job 分配一台全新的 `windows-latest` 临时 Runner。该 Runner 与其他 Job 不共享磁盘，Job 结束后会被销毁。
+2. `actions/checkout@v4` 检出 `RELEASE_TAG` 指向的提交。模型文件 `outputs/yolo26-train/ppe-yolo26n-incremental-final/weights/best.pt` 必须已经包含在该提交中。
+3. `actions/setup-node@v4` 安装 Node.js 20，并把 `node`、`npm` 加入 `PATH`。Node.js 用于执行隐私审计、本地服务脚本和 Electron Builder。
+4. `actions/setup-python@v5` 安装 64 位 Python 3.11，并把 `python`、`pip` 加入 `PATH`。PyInstaller 必须在目标操作系统上运行，因此 Windows 后端只能在 Windows Job 中生成。
+5. `python -m pip install --upgrade pip` 更新 pip，随后 `python -m pip install -r requirements-build.txt` 安装 `PyYAML`、`ultralytics==8.4.117` 和 `pyinstaller>=6.16,<7`。Ultralytics 会继续安装 PyTorch、OpenCV 等推理依赖。
+6. `npm install --no-audit --no-fund` 安装 `electron` 39.x 和 `electron-builder` 26.x。此处允许执行 npm 安装脚本，以便下载 Windows Electron 运行时；不能改成 CI 中的 `--ignore-scripts`。
+7. `npm run dist:desktop` 首先调用 `npm run privacy:audit`。`scripts/audit_release_privacy.py` 扫描将进入发布包的源码和 `best.pt`，若发现本机用户路径、邮箱、私钥标记或常见访问令牌，命令立即失败，后续打包和上传不会执行。
+8. 同一命令随后调用 `npm run build:backend`，由 `scripts/build_desktop_backend.py` 依次执行两个 PyInstaller spec。`ppe-inference.spec` 把摄像头推理服务以及 Ultralytics、PyTorch、OpenCV 等依赖冻结为 `dist/backend/ppe-inference.exe`；`ppe-dataset-importer.spec` 把数据集维护工具冻结为 `dist/backend/ppe-dataset-importer.exe`。
+9. PyInstaller 使用 `--clean` 清理自身分析缓存，临时构建文件写入 `build/pyinstaller/`。只要任一后端构建返回非零退出码，Python 脚本、`dist:desktop` 和整个 Windows Job 都会失败。
+10. 后端成功后，Electron Builder 读取 `package.json` 的 `build` 配置。它收集界面、本地 Node.js 服务、Electron 主进程、Python 脚本、运行要求和最终模型，并通过 `extraResources` 把 `dist/backend` 放入桌面应用的 `resources/backend`。
+11. Electron Builder 根据 `win.target` 分别构建 `PPE-Sentinel-Setup-<version>-<arch>.exe` 和 `PPE-Sentinel-Portable-<version>-<arch>.exe`，输出到 `release/`。应用启动时，`electron/main.cjs` 会从 `resources/backend` 查找两个 `.exe` 后端并启动本地服务，因此用户计算机不需要另装 Python。
+12. `actions/upload-artifact@v4` 只将 `release/` 顶层的 `.exe` 和 `.exe.blockmap` 保存为 `ppe-sentinel-windows`，不会上传 `win-unpacked`。该上传只在前面所有步骤成功后执行；产物供 Publish Job 使用，并不是最终 GitHub Release 本身。
 
 ### Linux Job
 
-Linux Job 与 Windows Job 相同，但使用 `ubuntu-latest`，由 Electron Builder 生成 AppImage。
+1. GitHub 同时为 `linux` Job 分配独立的 `ubuntu-latest` 临时 Runner；只要 Runner 配额允许，它会与 Windows Job 并行执行。
+2. `actions/checkout@v4` 检出同一个 `RELEASE_TAG`，确保 Linux 与 Windows 使用完全相同的源码、模型和版本号。
+3. `actions/setup-node@v4` 安装 Node.js 20，`actions/setup-python@v5` 安装 Python 3.11。Linux 可执行文件必须在 Linux Runner 上由 PyInstaller 原生生成，不能复用 Windows Job 的 `.exe`。
+4. pip 更新后，先从 PyTorch CPU 索引安装 `torch==2.7.1` 和 `torchvision==0.22.1`，再通过 `requirements-build.txt` 安装 PyYAML、Ultralytics、PyInstaller 及其传递依赖；随后 `npm install --no-audit --no-fund` 安装 Linux 对应的 Electron 运行时和 Electron Builder。
+5. `npm run dist:desktop` 先执行同一套隐私审计。任何敏感信息命中都会终止 Linux Job，避免把问题文件传到 Actions Artifact 或 GitHub Release。
+6. `scripts/build_desktop_backend.py` 在 `dist/backend/` 生成 Linux 原生的 `ppe-inference` 和 `ppe-dataset-importer`，文件名不带 `.exe`。两个 spec 的入口、依赖收集规则和数据集维护能力与 Windows 版本一致。
+7. Electron Builder 收集桌面源码、脱敏模型和两个 Linux 后端，通过 `linux.target` 生成 `PPE-Sentinel-<version>-<arch>.AppImage`，结果写入 `release/`。
+8. 大小门禁确认 AppImage 不超过 `2147483647` 字节后，`actions/upload-artifact@v4` 只把 `release/` 顶层的 `.AppImage` 保存为 `ppe-sentinel-linux`，不会上传 `linux-unpacked`。如果依赖安装、隐私审计、PyInstaller、Electron Builder 或大小检查任一步失败，该平台产物不会上传，Publish Job 也不会启动。
 
 ### Publish Job
 
-Windows 和 Linux Job 都成功后，Publish Job 下载两个构建产物，并使用 `softprops/action-gh-release` 为当前 `v*` 标签创建 GitHub Release。发布说明由 `generate_release_notes: true` 自动生成。
+1. `needs: [windows, linux]` 让 Publish Job 等待两个平台 Job。只有 Windows 和 Linux 都成功时才发布；任一 Job 失败或被取消，Publish Job 会显示为跳过。
+2. GitHub 分配一台新的 `ubuntu-latest` Runner。该 Runner 不执行打包，也看不到前两个 Runner 的本地文件，必须通过 Actions Artifact 取得产物。
+3. `actions/download-artifact@v4` 下载当前工作流运行中的全部产物到 `release/`。`merge-multiple: true` 将 Windows 和 Linux Artifact 合并到该目录，便于使用明确的文件扩展名筛选。
+4. Publish Job 再次检查所有资产均严格小于 2 GiB；随后 `softprops/action-gh-release@v2` 只查找 `release/*.exe`、`release/*.exe.blockmap` 和 `release/*.AppImage`，并把匹配文件作为 Release Assets 上传。
+5. Action 使用显式的 `tag_name: ${{ env.RELEASE_TAG }}` 作为 Release 标签和版本依据，避免手动运行时出现 `GitHub Releases requires a tag`。工作流级 `permissions: contents: write` 允许内置临时 `GITHUB_TOKEN` 创建或更新 Release，不需要配置个人访问令牌。
+6. `generate_release_notes: true` 要求 GitHub 根据上一版本标签之后的提交和合并记录自动生成发布说明。仓库提交信息和 Pull Request 标题会直接影响说明质量。
+7. 上传全部成功后，GitHub 的 `Releases` 页面才会出现可供用户下载的桌面产物。如果同一标签的工作流被重新运行，Action 会更新该标签对应的现有 Release；应先确认旧资产与新资产不会发生同名冲突。
+
+三个 Job 的状态依赖关系为：
+
+```text
+Windows Job ─┐
+             ├─ 两者全部成功 ─> Publish Job ─> GitHub Release
+Linux Job ───┘
+```
 
 ## 7. 验证发布产物
 
 在 GitHub 的 `Actions` 页面确认三个 Job 均为绿色，然后在 `Releases` 页面下载：
 
-- Windows `PPE-Sentinel-<version>-<arch>.exe`：NSIS 安装程序。
-- Windows 同名 Portable `.exe`：免安装版本。
+- Windows `PPE-Sentinel-Setup-<version>-<arch>.exe`：NSIS 安装程序。
+- Windows `PPE-Sentinel-Portable-<version>-<arch>.exe`：免安装版本。
 - Linux `PPE-Sentinel-<version>-<arch>.AppImage`。
 
 首次启动后检查：

@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag (for example, v1.0.2)"
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -13,9 +22,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Validate release version
+        run: |
+          node -e "const p=require('./package.json'); const tag=process.env.RELEASE_TAG.replace(/^v/, ''); if (p.version !== tag) { console.error('Tag ' + process.env.RELEASE_TAG + ' does not match package version ' + p.version); process.exit(1) }"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -29,29 +43,58 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ppe-sentinel-windows
-          path: release/*
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+          if-no-files-found: error
 
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Validate release version
+        run: |
+          node -e "const p=require('./package.json'); const tag=process.env.RELEASE_TAG.replace(/^v/, ''); if (p.version !== tag) { console.error('Tag ' + process.env.RELEASE_TAG + ' does not match package version ' + p.version); process.exit(1) }"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Install Python and Node dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.7.1" "torchvision==0.22.1"
           python -m pip install -r requirements-build.txt
+          python -c "import torch, torchvision; assert torch.version.cuda is None, 'Linux desktop build must use CPU-only PyTorch'; print(f'torch={torch.__version__}, torchvision={torchvision.__version__}, cuda={torch.version.cuda}')"
           npm install --no-audit --no-fund
       - name: Build Linux AppImage
         run: npm run dist:desktop
+      - name: Verify Linux AppImage size
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_bytes=2147483647
+          appimage=(release/*.AppImage)
+          if [[ ! -f "${appimage[0]}" ]]; then
+            echo "No AppImage was generated" >&2
+            exit 1
+          fi
+          for file in "${appimage[@]}"; do
+            size=$(stat -c %s "$file")
+            echo "$file: $size bytes"
+            if (( size > max_bytes )); then
+              echo "AppImage exceeds the GitHub Release asset limit of 2147483647 bytes" >&2
+              exit 1
+            fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: ppe-sentinel-linux
-          path: release/*
+          path: release/*.AppImage
+          if-no-files-found: error
 
   publish:
     needs: [windows, linux]
@@ -60,8 +103,33 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release
+          merge-multiple: true
+      - name: Verify release asset sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_bytes=2147483647
+          found=0
+          while IFS= read -r -d '' file; do
+            found=1
+            size=$(stat -c %s "$file")
+            echo "$file: $size bytes"
+            if (( size > max_bytes )); then
+              echo "Release asset exceeds GitHub's 2147483647-byte limit: $file" >&2
+              exit 1
+            fi
+          done < <(find release -maxdepth 1 -type f \( -name '*.exe' -o -name '*.exe.blockmap' -o -name '*.AppImage' \) -print0)
+          if (( found == 0 )); then
+            echo "No release assets were downloaded" >&2
+            exit 1
+          fi
       - name: Publish tagged release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/**/*
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.AppImage
+          fail_on_unmatched_files: false
           generate_release_notes: true

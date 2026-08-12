@@ -129,16 +129,21 @@ PPE Sentinel 根据 GNU Affero 通用公共许可证 v3.0 或更高版本进行�
 ## 本系统训练数据集来源
 
 数据集1：Construction Site Safety Image Dataset Roboflow
+
 https://www.kaggle.com/datasets/snehilsanyal/construction-site-safety-image-dataset-roboflow/data
 
 数据集2：Construction Site SafetyComputer Vision Model
+
 https://universe.roboflow.com/roboflow-universe-projects/construction-site-safety/dataset/30
 
 数据集3：Safety Goggles - PPEComputer Vision Dataset
+
 https://universe.roboflow.com/database-sjrvw/safety-goggles---ppe/dataset/1
 
 数据集4：PPE Dataset for WorkplaceComputer Vision Dataset
+
 https://universe.roboflow.com/siabar/ppe-dataset-for-workplace/dataset/1
 
 数据集5：coverallComputer Vision Dataset
+
 https://universe.roboflow.com/khroos/coverall-cvebt/dataset/2

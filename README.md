@@ -115,25 +115,3 @@ Training outputs, raw images, ZIP archives, local logs, `.env`, and nested datas
 ## License
 
 PPE Sentinel is distributed under the GNU Affero General Public License v3.0 or later. Ultralytics is also AGPL-licensed; see `THIRD_PARTY_NOTICES.md` and `LICENSE` before redistributing modified network deployments.
-
-## Sources of training datasets for this system
-
-Dataset 1: Construction Site Safety Image Dataset (Roboflow)
-
-https://www.kaggle.com/datasets/snehilsanyal/construction-site-safety-image-dataset-roboflow/data
-
-Dataset 2: Construction Site Safety Computer Vision Model
-
-https://universe.roboflow.com/roboflow-universe-projects/construction-site-safety/dataset/30
-
-Dataset 3: Safety Goggles - PPE Computer Vision Dataset
-
-https://universe.roboflow.com/database-sjrvw/safety-goggles---ppe/dataset/1
-
-Dataset 4: PPE Dataset for Workplace Computer Vision Dataset
-
-https://universe.roboflow.com/siabar/ppe-dataset-for-workplace/dataset/1
-
-Dataset 5: Coverall Computer Vision Dataset
-
-https://universe.roboflow.com/khroos/coverall-cvebt/dataset/2

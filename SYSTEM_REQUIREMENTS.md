@@ -1,6 +1,6 @@
 # PPE Sentinel System Configuration Requirements
 
-This document applies to PPE Sentinel YOLO26 `1.0.0`. Configurations are divided into three categories: real-time detection, public server deployment, and model training. Node.js or Python installation is not required when only running the packaged desktop application.
+This document applies to PPE Sentinel YOLO26 `1.0.2`. Configurations are divided into three categories: real-time detection, public server deployment, and model training. Node.js or Python installation is not required when only running the packaged desktop application.
 
 ## 1. Minimum Configuration for Real-time Detection
 
