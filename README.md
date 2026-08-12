@@ -116,6 +116,10 @@ Training outputs, raw images, ZIP archives, local logs, `.env`, and nested datas
 
 PPE Sentinel is distributed under the GNU Affero General Public License v3.0 or later. Ultralytics is also AGPL-licensed; see `THIRD_PARTY_NOTICES.md` and `LICENSE` before redistributing modified network deployments.
 
+## The DOI of this code repository
+
+10.13140/RG.2.2.31556.80008
+
 ## Sources of training datasets for this system
 
 Dataset 1: Construction Site Safety Image Dataset (Roboflow)
