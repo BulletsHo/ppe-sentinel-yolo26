@@ -4,9 +4,9 @@ PPE Sentinel is an open-source YOLO26 workplace-safety detector with a browser U
 
 The bundled incremental model has 28 classes, including `Mask`, `Gloves`, `Goggles`, `Safety Vest`, `Coverall`, and `Ear Protection`. Ear Protection currently has limited representative validation data and must not be used as the sole basis for compliance decisions.
 
-Detailed minimum, recommended, deployment, and training requirements are documented in [`docs/SYSTEM_REQUIREMENTS.md`](docs/SYSTEM_REQUIREMENTS.md).
+Detailed minimum, recommended, deployment, and training requirements are documented in [`SYSTEM_REQUIREMENTS.md`](SYSTEM_REQUIREMENTS.md).
 
-The exact GitHub Actions setup and release procedure is documented in [`docs/GITHUB_ACTIONS_GUIDE.md`](docs/GITHUB_ACTIONS_GUIDE.md).
+The exact GitHub Actions setup and release procedure is documented in [`GITHUB_ACTIONS_GUIDE.md`](GITHUB_ACTIONS_GUIDE.md).
 
 ## Clone and setup
 
